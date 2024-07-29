@@ -155,7 +155,7 @@ services:
         condition: service_healthy
 
   ui:
-    image: safeglobal/safe-wallet-web:${UI_VERSION}
+    image: liuqiang1357/safe-wallet-web:${UI_VERSION}
     env_file:
       - container_env_files/ui.env
     depends_on:
