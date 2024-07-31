@@ -1,5 +1,6 @@
 volumes:
-  nginx-shared-txs:
+  nginx-shared-mainnet-txs:
+  nginx-shared-testnet-txs:
   nginx-shared-cfg:
 
 x-healthcheck-db-template: &pghealthcheck
@@ -31,22 +32,33 @@ services:
       - "${REVERSE_PROXY_PORT}:8000"
     volumes:
       - ./docker/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
-      - nginx-shared-txs:/nginx-txs
+      - nginx-shared-mainnet-txs:/nginx-mainnet-txs
+      - nginx-shared-testnet-txs:/nginx-testnet-txs
       - nginx-shared-cfg:/nginx-cfg
       - ./media:/media
     depends_on:
-      - txs-web
+      - mainnet-txs-web
+      - testnet-txs-web
       - cfg-web
       - cgw-web
       - events-web
 
-  txs-db:
+  mainnet-txs-db:
     image: postgres:14-alpine
     command: -c 'max_connections=250'
     environment:
       POSTGRES_PASSWORD: postgres
     volumes:
-      - ./data/txs-db:/var/lib/postgresql/data
+      - ./data/mainnet-txs-db:/var/lib/postgresql/data
+    <<: *pghealthcheck
+
+  testnet-txs-db:
+    image: postgres:14-alpine
+    command: -c 'max_connections=250'
+    environment:
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - ./data/testnet-txs-db:/var/lib/postgresql/data
     <<: *pghealthcheck
 
   cfg-db:
@@ -66,67 +78,131 @@ services:
     <<: *pghealthcheck
 
   # Safe Transaction Service
-  txs-redis:
+  mainnet-txs-redis:
     image: redis:alpine
     <<: *redishealthcheck
 
-  txs-rabbitmq:
+  testnet-txs-redis:
+    image: redis:alpine
+    <<: *redishealthcheck
+
+  mainnet-txs-rabbitmq:
     image: rabbitmq:alpine
 
-  txs-worker-indexer: &txs-worker
+  testnet-txs-rabbitmq:
+    image: rabbitmq:alpine
+
+  mainnet-txs-worker-indexer: &mainnet-txs-worker
     image: safeglobal/safe-transaction-service:${TXS_VERSION}
     env_file:
-      - container_env_files/txs.env
+      - container_env_files/mainnet-txs.env
     environment:
-      - ETHEREUM_NODE_URL=${RPC_NODE_URL}
+      - ETHEREUM_NODE_URL=${MAINNET_RPC_NODE_URL}
       - RUN_MIGRATIONS=1
       - WORKER_QUEUES=default,indexing
     depends_on:
-      txs-db:
+      mainnet-txs-db:
         condition: service_healthy
-      txs-redis:
+      mainnet-txs-redis:
         condition: service_healthy
     command: docker/web/celery/worker/run.sh
     <<: *celeryhealthcheck
 
-  txs-worker-contracts-tokens:
-    <<: *txs-worker
-    environment:
-      - WORKER_QUEUES=contracts,tokens
-      - ETHEREUM_NODE_URL=${RPC_NODE_URL}
-    depends_on:
-      txs-worker-indexer:
-        condition: service_healthy
-
-  txs-worker-notifications-webhooks:
-    <<: *txs-worker
-    environment:
-      - WORKER_QUEUES=notifications,webhooks
-      - ETHEREUM_NODE_URL=${RPC_NODE_URL}
-    depends_on:
-      txs-worker-indexer:
-        condition: service_healthy
-
-  txs-web:
+  testnet-txs-worker-indexer: &testnet-txs-worker
     image: safeglobal/safe-transaction-service:${TXS_VERSION}
     env_file:
-      - container_env_files/txs.env
+      - container_env_files/testnet-txs.env
     environment:
-      - ETHEREUM_NODE_URL=${RPC_NODE_URL}
+      - ETHEREUM_NODE_URL=${TESTNET_RPC_NODE_URL}
+      - RUN_MIGRATIONS=1
+      - WORKER_QUEUES=default,indexing
     depends_on:
-      txs-worker-indexer:
+      testnet-txs-db:
+        condition: service_healthy
+      testnet-txs-redis:
+        condition: service_healthy
+    command: docker/web/celery/worker/run.sh
+    <<: *celeryhealthcheck
+
+  mainnet-txs-worker-contracts-tokens:
+    <<: *mainnet-txs-worker
+    environment:
+      - WORKER_QUEUES=contracts,tokens
+      - ETHEREUM_NODE_URL=${MAINNET_RPC_NODE_URL}
+    depends_on:
+      mainnet-txs-worker-indexer:
+        condition: service_healthy
+
+  testnet-txs-worker-contracts-tokens:
+    <<: *testnet-txs-worker
+    environment:
+      - WORKER_QUEUES=contracts,tokens
+      - ETHEREUM_NODE_URL=${TESTNET_RPC_NODE_URL}
+    depends_on:
+      testnet-txs-worker-indexer:
+        condition: service_healthy
+
+  mainnet-txs-worker-notifications-webhooks:
+    <<: *mainnet-txs-worker
+    environment:
+      - WORKER_QUEUES=notifications,webhooks
+      - ETHEREUM_NODE_URL=${MAINNET_RPC_NODE_URL}
+    depends_on:
+      mainnet-txs-worker-indexer:
+        condition: service_healthy
+
+  testnet-txs-worker-notifications-webhooks:
+    <<: *testnet-txs-worker
+    environment:
+      - WORKER_QUEUES=notifications,webhooks
+      - ETHEREUM_NODE_URL=${TESTNET_RPC_NODE_URL}
+    depends_on:
+      testnet-txs-worker-indexer:
+        condition: service_healthy
+
+  mainnet-txs-web:
+    image: safeglobal/safe-transaction-service:${TXS_VERSION}
+    env_file:
+      - container_env_files/mainnet-txs.env
+    environment:
+      - ETHEREUM_NODE_URL=${MAINNET_RPC_NODE_URL}
+    depends_on:
+      mainnet-txs-worker-indexer:
         condition: service_healthy
     working_dir: /app
     volumes:
-      - nginx-shared-txs:/nginx
+      - nginx-shared-mainnet-txs:/nginx
     command: docker/web/run_web.sh
 
-  txs-scheduler:
-    <<: *txs-worker
+  testnet-txs-web:
+    image: safeglobal/safe-transaction-service:${TXS_VERSION}
+    env_file:
+      - container_env_files/testnet-txs.env
+    environment:
+      - ETHEREUM_NODE_URL=${TESTNET_RPC_NODE_URL}
     depends_on:
-      txs-db:
+      testnet-txs-worker-indexer:
         condition: service_healthy
-      txs-redis:
+    working_dir: /app
+    volumes:
+      - nginx-shared-testnet-txs:/nginx
+    command: docker/web/run_web.sh
+
+  mainnet-txs-scheduler:
+    <<: *mainnet-txs-worker
+    depends_on:
+      mainnet-txs-db:
+        condition: service_healthy
+      mainnet-txs-redis:
+        condition: service_healthy
+    command: docker/web/celery/scheduler/run.sh
+
+  testnet-txs-scheduler:
+    <<: *testnet-txs-worker
+    depends_on:
+      testnet-txs-db:
+        condition: service_healthy
+      testnet-txs-redis:
         condition: service_healthy
     command: docker/web/celery/scheduler/run.sh
 

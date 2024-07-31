@@ -1,11 +1,22 @@
 services:
-  txs-flower:
+  mainnet-txs-flower:
     image: safeglobal/safe-transaction-service:${TXS_VERSION}
     env_file:
-      - container_env_files/txs.env
+      - container_env_files/mainnet-txs.env
     depends_on:
-      - txs-db
-      - txs-redis
+      - mainnet-txs-db
+      - mainnet-txs-redis
     command: docker/web/celery/flower/run.sh
     ports:
       - "5555:5555"
+
+  testnet-txs-flower:
+    image: safeglobal/safe-transaction-service:${TXS_VERSION}
+    env_file:
+      - container_env_files/testnet-txs.env
+    depends_on:
+      - testnet-txs-db
+      - testnet-txs-redis
+    command: docker/web/celery/flower/run.sh
+    ports:
+      - "5556:5555"
